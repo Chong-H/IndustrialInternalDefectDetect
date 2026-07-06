@@ -4,20 +4,19 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from sklearn.metrics import precision_score, recall_score, mean_squared_error
-
+import json
 
 # ==========================================
 # 1. 数据集对象（保持原样，高内聚）
 # ==========================================
 class PECMultiPriorDataset(Dataset):
     def __init__(self, json_path):
-        import json
         with open(json_path, 'r') as f:
             raw_data = json.load(f)
 
         self.waveforms = []  # 356维的时序波形
-        self.phys_features = []  # 10维的重要物理先验 (4 + 4 + 2)
-        self.labels = []  # 目标：5分类的厚度标签
+        self.phys_features = []  # 动态拼接后的 10 维重要物理先验
+        self.labels = []  # 目标：厚度标签（铁为5分类，铝为9分类）
 
         for key, value in raw_data.items():
             meta = value['metaDataAndLabel']
@@ -28,15 +27,25 @@ class PECMultiPriorDataset(Dataset):
             if wave_max > wave_min:
                 x_wave = (x_wave - wave_min) / (wave_max - wave_min)
 
-            # 2. 提取并拼接真正重要的 3 个物理变量（全部为one-hot列表）
-            insulation_oh = meta['InsulationLabel']  # 4维
-            liftoff_oh = meta['Lift-offLabel']  # 4维
-            weather_jacket_oh = meta['WeatherJacketLabel']  # 2维
+            # 2. 💡【核心改动：自适应物理特征提取】
+            # 自动判断是铁数据集还是铝数据集
+            if 'InsulationLabel' in meta:
+                # ------ 执行【铁】数据集提取逻辑 ------
+                insulation_oh = meta['InsulationLabel']  # 4维
+                liftoff_oh = meta['Lift-offLabel']  # 4维
+                weather_jacket_oh = meta['WeatherJacketLabel']  # 2维
 
-            # 横向拼接成一个 10 维的特征向量
-            x_phys = insulation_oh + liftoff_oh + weather_jacket_oh
+                # 横向拼接成一个 10 维的特征向量 (4 + 4 + 2)
+                x_phys = insulation_oh + liftoff_oh + weather_jacket_oh
+            else:
+                # ------ 执行【铝】数据集提取逻辑 ------
+                loc_oh = meta['LocLabel']  # 4维
+                liftoff_oh = meta['Lift-offLabel']  # 6维
 
-            # 3. 提取 5分类 厚度目标
+                # 横向拼接成一个 10 维的特征向量 (4 + 6)
+                x_phys = loc_oh + liftoff_oh
+
+            # 3. 提取厚度目标（支持任意分类维度，铁会识别出5维，铝会识别出9维）
             y_one_hot = meta['ThicknessLabel']
             y_index = np.argmax(y_one_hot)
 
@@ -49,10 +58,10 @@ class PECMultiPriorDataset(Dataset):
         self.phys_features = torch.tensor(np.array(self.phys_features), dtype=torch.float32)
         self.labels = torch.tensor(self.labels, dtype=torch.long)
 
-        # 💡 自动把这套数据集的真实参数暴露给外层的神经网络
-        self.wave_dim = self.waveforms.shape[1]  # 应该是 356
-        self.phys_dim = self.phys_features.shape[1]  # 4 + 4 + 2 = 10 维
-        self.num_classes = len(y_one_hot)  # 5分类
+        # 💡 自动把这套数据集解析出来的真实参数暴露给外层的神经网络
+        self.wave_dim = self.waveforms.shape[1]  # 356
+        self.phys_dim = self.phys_features.shape[1]  # 无论是(4+4+2)还是(4+6)，这里都雷打不动是 10 维
+        self.num_classes = len(y_one_hot)  # 铁自动暴露 5，铝自动暴露 9
 
     def __len__(self):
         return len(self.labels)
@@ -381,7 +390,7 @@ class PECResNetModel:
         print(f"📈 测试集准确率 (Accuracy)   : {accuracy:.2f}%")
         print(f"🎯 查准率 (Macro Precision) : {precision:.2f}%")
         print(f"🔍 查全率 (Macro Recall)    : {recall:.2f}%")
-        print(f"📉 类别均方误差 (Class MSE) : {mse:.4f}")
+        print(f"📉 预测档位索引与真实档位索引的全局均方误差( MSE) : {mse:.4f}")
         print(f"=" * 40)
 # ==========================================
 
@@ -397,28 +406,29 @@ if __name__ == "__main__":
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    model_choice=3
+    if model_choice == 1:
+        model = PECModel(
+            num_classes=dataset.num_classes,  # 传入 5
+            phys_dim=dataset.phys_dim,  # 传入 10
+            wave_len=dataset.wave_dim,  # 自动传入 356（或实际读取到的任何长度）
+            lr=0.001
+        )
+    elif model_choice == 2:
+        model = PECSimpleMLPModel(
+            wave_dim=dataset.wave_dim,  # 自动匹配 356
+            phys_dim=dataset.phys_dim,  # 自动匹配 10
+            num_classes=dataset.num_classes,  # 自动匹配 5
+            lr=0.001
+        )
+    elif model_choice == 3:
+        model = PECResNetModel(
+            num_classes=dataset.num_classes,  # 动态传入 5
+            phys_dim=dataset.phys_dim,  # 动态传入 10
+            wave_len=dataset.wave_dim,  # 动态传入 356
+            lr=0.001
+        )
 
-    # 实例化大模型类
-    # model = PECModel(
-    #     num_classes=dataset.num_classes,  # 传入 5
-    #     phys_dim=dataset.phys_dim,        # 传入 10
-    #     wave_len=dataset.wave_dim,        # 自动传入 356（或实际读取到的任何长度）
-    #     lr=0.001
-    # )
-    # model = PECSimpleMLPModel(
-    #     wave_dim=dataset.wave_dim,  # 自动匹配 356
-    #     phys_dim=dataset.phys_dim,  # 自动匹配 10
-    #     num_classes=dataset.num_classes,  # 自动匹配 5
-    #     lr=0.001
-    # )
-    model = PECResNetModel(
-        num_classes=dataset.num_classes,  # 动态传入 5
-        phys_dim=dataset.phys_dim,  # 动态传入 10
-        wave_len=dataset.wave_dim,  # 动态传入 356
-        lr=0.001
-    )
-    #model=PECSimpleMLPModel(wave_dim=356, phys_dim=5, num_classes=9, lr=0.001)
-    #model = PECResNetModel(num_classes=9, phys_dim=5, lr=0.001)
     # 直接串联业务
-    model.fit(train_loader, epochs=40)
+    model.fit(train_loader, epochs=60)
     model.evaluate(test_loader)

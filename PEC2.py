@@ -9,39 +9,50 @@ from sklearn.metrics import precision_score, recall_score, mean_squared_error
 # ==========================================
 # 1. 数据集对象（保持原样，高内聚）
 # ==========================================
-class PECFusionDataset(Dataset):
+class PECMultiPriorDataset(Dataset):
     def __init__(self, json_path):
         import json
         with open(json_path, 'r') as f:
             raw_data = json.load(f)
 
-        waveforms = []
-        phys_features = []
-        labels = []
+        self.waveforms = []  # 356维的时序波形
+        self.phys_features = []  # 10维的重要物理先验 (4 + 4 + 2)
+        self.labels = []  # 目标：5分类的厚度标签
 
         for key, value in raw_data.items():
+            meta = value['metaDataAndLabel']
+
+            # 1. 波形提取与归一化 (保持无损等比例缩放)
             x_wave = np.array(value['data'], dtype=np.float32)
             wave_min, wave_max = x_wave.min(), x_wave.max()
             if wave_max > wave_min:
                 x_wave = (x_wave - wave_min) / (wave_max - wave_min)
 
-            lift_off = value['metaDataAndLabel']['Lift-off']
-            loc_label = value['metaDataAndLabel']['LocLabel']
-            x_phys = [lift_off] + loc_label
+            # 2. 提取并拼接真正重要的 3 个物理变量（全部为one-hot列表）
+            insulation_oh = meta['InsulationLabel']  # 4维
+            liftoff_oh = meta['Lift-offLabel']  # 4维
+            weather_jacket_oh = meta['WeatherJacketLabel']  # 2维
 
-            y_one_hot = value['metaDataAndLabel']['ThicknessLabel']
+            # 横向拼接成一个 10 维的特征向量
+            x_phys = insulation_oh + liftoff_oh + weather_jacket_oh
+
+            # 3. 提取 5分类 厚度目标
+            y_one_hot = meta['ThicknessLabel']
             y_index = np.argmax(y_one_hot)
 
-            waveforms.append(x_wave)
-            phys_features.append(x_phys)
-            labels.append(y_index)
+            self.waveforms.append(x_wave)
+            self.phys_features.append(x_phys)
+            self.labels.append(y_index)
 
-        # 💡 这里顺手修复了 list 转 tensor 慢的警告
-        self.waveforms = torch.tensor(np.array(waveforms), dtype=torch.float32)
-        self.phys_features = torch.tensor(np.array(phys_features), dtype=torch.float32)
-        self.labels = torch.tensor(labels, dtype=torch.long)
+        # 转换为 Tensor，预先经过 numpy 包装确保速度
+        self.waveforms = torch.tensor(np.array(self.waveforms), dtype=torch.float32)
+        self.phys_features = torch.tensor(np.array(self.phys_features), dtype=torch.float32)
+        self.labels = torch.tensor(self.labels, dtype=torch.long)
 
-        self.phys_features[:, 0] = self.phys_features[:, 0] / self.phys_features[:, 0].max()
+        # 💡 自动把这套数据集的真实参数暴露给外层的神经网络
+        self.wave_dim = self.waveforms.shape[1]  # 应该是 356
+        self.phys_dim = self.phys_features.shape[1]  # 4 + 4 + 2 = 10 维
+        self.num_classes = len(y_one_hot)  # 5分类
 
     def __len__(self):
         return len(self.labels)
@@ -49,13 +60,12 @@ class PECFusionDataset(Dataset):
     def __getitem__(self, idx):
         return self.waveforms[idx], self.phys_features[idx], self.labels[idx]
 
-
 # ==========================================
 # 1D-CNN
 # ==========================================
 class PECModel:
-    def __init__(self, num_classes=9, phys_dim=5, lr=0.001):
-        # 内部网络定义
+    # 💡 隐患修正：加入 wave_len=356，网络根据实际波形采样点动态计算展平特征数
+    def __init__(self, num_classes=5, phys_dim=10, wave_len=356, lr=0.001):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.cnn = nn.Sequential(
@@ -67,8 +77,12 @@ class PECModel:
             nn.MaxPool1d(2, 2)
         ).to(self.device)
 
+        # 💡 [关键改动]：不要写死 32 * 89。
+        # 经过两层 MaxPool1d(2, 2)，序列长度缩减为原来的 1/4
+        flatten_wave_dim = 32 * (wave_len // 4)
+
         self.classifier = nn.Sequential(
-            nn.Linear(32 * 89 + phys_dim, 128),
+            nn.Linear(flatten_wave_dim + phys_dim, 128),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(128, num_classes)
@@ -137,23 +151,23 @@ class PECModel:
         mse = mean_squared_error(all_targets, all_preds)
 
         print(f"\n" + "=" * 40)
-        print(f"       --- 融合模型全面评估报告 ---")
+        print(f"        --- 融合模型全面评估报告 ---")
         print(f"=" * 40)
         print(f"📈 测试集准确率 (Accuracy)   : {accuracy:.2f}%")
         print(f"🎯 查准率 (Macro Precision) : {precision:.2f}%")
         print(f"🔍 查全率 (Macro Recall)    : {recall:.2f}%")
         print(f"📉 类别均方误差 (Class MSE) : {mse:.4f}")
         print(f"=" * 40)
-
 #Simple MLP
 class PECSimpleMLPModel:
-    def __init__(self, wave_dim=356, phys_dim=5, num_classes=9, lr=0.001):
+    # 💡 默认参数无缝同步为新数据集特征：5分类、10维物理先验
+    def __init__(self, wave_dim=356, phys_dim=10, num_classes=5, lr=0.001):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # 没有任何卷积，输入直接是 356 (波形) + 5 (物理先验) = 361 维
+        # 没有任何卷积，输入直接是 356 (波形) + 10 (新物理先验组合) = 366 维
         input_dim = wave_dim + phys_dim
 
-        # 经典的低配多层感知机架构
+        # 经典感知机架构
         self.mlp = nn.Sequential(
             nn.Linear(input_dim, 256),
             nn.ReLU(),
@@ -169,8 +183,8 @@ class PECSimpleMLPModel:
 
     def _forward(self, x_wave, x_phys):
         """内部前向传播：直接拼接原始特征"""
-        # x_wave: [Batch, 356], x_phys: [Batch, 5]
-        # 顺着第 1 维度（特征维）直接死板地拼成 [Batch, 361]
+        # x_wave: [Batch, 356], x_phys: [Batch, 10]
+        # 顺着特征维拼成 [Batch, 366]
         x_combined = torch.cat((x_wave, x_phys), dim=1)
         return self.mlp(x_combined)
 
@@ -247,8 +261,12 @@ class ResBlock1D(nn.Module):
         return self.relu(self.conv_path(x) + x)
 
 
+# ==========================================
+# 1D-ResNet 融合大模型（自适应升级版）
+# ==========================================
 class PECResNetModel:
-    def __init__(self, num_classes=9, phys_dim=5, lr=0.001):
+    # 💡 升级点：引入 wave_len=356，并同步最新数据集默认值（5分类、10维先验）
+    def __init__(self, num_classes=5, phys_dim=10, wave_len=356, lr=0.001):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # 基础特征映射：先把 1 通道的波形提升到 32 通道
@@ -256,7 +274,7 @@ class PECResNetModel:
             nn.Conv1d(in_channels=1, out_channels=32, kernel_size=7, stride=1, padding=3),
             nn.BatchNorm1d(32),
             nn.ReLU(),
-            nn.MaxPool1d(2, 2)  # 356 / 2 = 178
+            nn.MaxPool1d(2, 2)  # 第一次池化：wave_len -> wave_len // 2
         ).to(self.device)
 
         # 串联两个残差块，进行深层特征挖掘而不用担心梯度消失
@@ -270,12 +288,16 @@ class PECResNetModel:
             nn.Conv1d(32, 64, kernel_size=5, stride=1, padding=2),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.MaxPool1d(2, 2)  # 178 / 2 = 89
+            nn.MaxPool1d(2, 2)  # 第二次池化：(wave_len // 2) -> wave_len // 4
         ).to(self.device)
 
-        # 扁平化后的 CNN 特征维数：64通道 * 89长度 = 5696
+        # 💡 [破除硬编码]：经过两次池化，时序特征长度严格变为原来的 1/4
+        # 展平后的总维度 = 64 通道 * (波形长度 // 4)
+        flatten_wave_dim = 64 * (wave_len // 4)
+
+        # 最终分类器
         self.classifier = nn.Sequential(
-            nn.Linear(64 * 89 + phys_dim, 256),
+            nn.Linear(flatten_wave_dim + phys_dim, 256),
             nn.ReLU(),
             nn.Dropout(0.3),
             nn.Linear(256, 128),
@@ -294,13 +316,13 @@ class PECResNetModel:
 
     def _forward(self, x_wave, x_phys):
         """内部前向传播"""
-        x_wave = x_wave.unsqueeze(1)  # [Batch, 1, 356]
-        x_feat = self.init_conv(x_wave)  # [Batch, 32, 178]
-        x_feat = self.res_blocks(x_feat)  # [Batch, 32, 178] (残差演进)
-        x_feat = self.downsample(x_feat)  # [Batch, 64, 89]
-        x_feat = torch.flatten(x_feat, 1)  # [Batch, 5696]
+        x_wave = x_wave.unsqueeze(1)      # [Batch, 1, wave_len]
+        x_feat = self.init_conv(x_wave)   # [Batch, 32, wave_len // 2]
+        x_feat = self.res_blocks(x_feat)  # [Batch, 32, wave_len // 2] (残差演进)
+        x_feat = self.downsample(x_feat)  # [Batch, 64, wave_len // 4]
+        x_feat = torch.flatten(x_feat, 1) # 动态展平
 
-        # 特征拼接
+        # 特征拼接：结合一维空间深层特征与环境多物理先验
         x_combined = torch.cat((x_feat, x_phys), dim=1)
         return self.classifier(x_combined)
 
@@ -367,7 +389,7 @@ class PECResNetModel:
 if __name__ == "__main__":
     #json_file_path = "D:\\DataSets\\InsideMachine\\PECdataset\\aluminum.json"
     json_file_path = "D:\\DataSets\\InsideMachine\\PECdataset\\S355mildsteel.json"
-    dataset = PECFusionDataset(json_file_path)
+    dataset = PECMultiPriorDataset(json_file_path)
 
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
@@ -377,9 +399,26 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # 实例化大模型类
-    #model = PECModel(num_classes=9, phys_dim=5, lr=0.001)
+    # model = PECModel(
+    #     num_classes=dataset.num_classes,  # 传入 5
+    #     phys_dim=dataset.phys_dim,        # 传入 10
+    #     wave_len=dataset.wave_dim,        # 自动传入 356（或实际读取到的任何长度）
+    #     lr=0.001
+    # )
+    # model = PECSimpleMLPModel(
+    #     wave_dim=dataset.wave_dim,  # 自动匹配 356
+    #     phys_dim=dataset.phys_dim,  # 自动匹配 10
+    #     num_classes=dataset.num_classes,  # 自动匹配 5
+    #     lr=0.001
+    # )
+    model = PECResNetModel(
+        num_classes=dataset.num_classes,  # 动态传入 5
+        phys_dim=dataset.phys_dim,  # 动态传入 10
+        wave_len=dataset.wave_dim,  # 动态传入 356
+        lr=0.001
+    )
     #model=PECSimpleMLPModel(wave_dim=356, phys_dim=5, num_classes=9, lr=0.001)
-    model = PECResNetModel(num_classes=9, phys_dim=5, lr=0.001)
+    #model = PECResNetModel(num_classes=9, phys_dim=5, lr=0.001)
     # 直接串联业务
     model.fit(train_loader, epochs=40)
     model.evaluate(test_loader)

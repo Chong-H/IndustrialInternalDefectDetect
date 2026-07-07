@@ -71,8 +71,8 @@ https://zenodo.org/records/10618962
 注意 需要将ResNet的epoch改为60才有好的效果，40轮还欠拟合
 Precision 93.54% 查全率Recall 92.33%  MSE 0.0801
 
-## 针对WDD焊缝缺陷检测数据集 射线射线照片图像 EPOCH=50，1600张数据集，batchsize=16
-使用yoloV11n-seg
+## 针对WDD焊缝缺陷检测数据集 射线射线照片图像 数据集-识别任务
+### 使用yoloV11n-seg，EPOCH=50，1600张数据集，batchsize=16 ，耗时40min训练
 
 指标 | 边界框检测指标 (Box) | 缺陷分割指标 (Mask) 
 ---- | ---- | ----
@@ -80,4 +80,13 @@ Precision 93.54% 查全率Recall 92.33%  MSE 0.0801
 查全率| 0.9880| 0.9356
 F1-Score|  0.9935| 0.9405
 mAP50|    0.9947| 0.9542
-
+### 使用DeepLabV3，epoch=5，训练集200张
+像素查准率 (Precision): 0.6651
+像素查全率 (Recall):    0.1075
+F1-Score:              0.1851
+缺陷交并比 (IoU / mAP): 0.1020
+### 使用FCN算法，epoch=5，训练集200张
+像素查准率 (Precision): 0.7159
+像素查全率 (Recall):    0.0460
+F1-Score:              0.0864
+缺陷交并比 (IoU / mAP): 0.0452

@@ -165,7 +165,7 @@ class PECModel:
         print(f"📈 测试集准确率 (Accuracy)   : {accuracy:.2f}%")
         print(f"🎯 查准率 (Macro Precision) : {precision:.2f}%")
         print(f"🔍 查全率 (Macro Recall)    : {recall:.2f}%")
-        print(f"📉 类别均方误差 (Class MSE) : {mse:.4f}")
+        print(f"MSE) : {mse:.4f}")
         print(f"=" * 40)
 #Simple MLP
 class PECSimpleMLPModel:
@@ -249,7 +249,7 @@ class PECSimpleMLPModel:
         print(f"📈 测试集准确率 (Accuracy)   : {accuracy:.2f}%")
         print(f"🎯 查准率 (Macro Precision) : {precision:.2f}%")
         print(f"🔍 查全率 (Macro Recall)    : {recall:.2f}%")
-        print(f"📉 类别均方误差 (Class MSE) : {mse:.4f}")
+        print(f"MSE) : {mse:.4f}")
         print(f"=" * 40)
 
 class ResBlock1D(nn.Module):
@@ -396,9 +396,11 @@ class PECResNetModel:
 
 # ==========================================
 if __name__ == "__main__":
-    #json_file_path = "D:\\DataSets\\InsideMachine\\PECdataset\\aluminum.json"
-    json_file_path = "D:\\DataSets\\InsideMachine\\PECdataset\\S355mildsteel.json"
-    dataset = PECMultiPriorDataset(json_file_path)
+
+    json_file_path = "D:\\DataSets\\InsideMachine\\PECdataset\\aluminum.json"
+    json_file_path1 = "D:\\DataSets\\InsideMachine\\PECdataset\\S355mildsteel.json"
+    PECurl=json_file_path
+    dataset = PECMultiPriorDataset(PECurl)
 
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size

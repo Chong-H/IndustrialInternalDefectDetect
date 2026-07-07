@@ -1,0 +1,8 @@
+# weld.yaml
+path: D:\DataSets\InsideMachine\Weld-defect-detection-datasets\datasets1\datasets1 # 数据集根路径
+train: images # 训练集图片子目录
+val: images   # 验证集图片子目录（数据少时可以先和训练集用同一个，后续建议拆分）
+
+# 类别定义
+names:
+  0: weld_defect # 缺陷名称，可自行修改

@@ -3,7 +3,9 @@
 工业缺陷检测课程实验，仅用于模型训练与本地推理练习。
 # 环境
 CU118  
-torch2.10
+torch2.00
+ultralytics
+
 # DATASET
 ## 金属厚度预测数据集
 https://www.kaggle.com/datasets/rusuanjun/pec-dataset
@@ -11,7 +13,7 @@ https://www.kaggle.com/datasets/rusuanjun/pec-dataset
 ## 超声流量计（Ultrasonic Flowmeters）运行工况与健康状态
 https://www.selectdataset.com/dataset/e3d68a3257fe7803a0043dde68d89f38
 
-## 焊缝 X 射线照片中的缺陷检测——焊接缺陷检测
+## RWDD 焊缝 X 射线照片中的缺陷检测——焊接缺陷检测
 Gazprom Neft（俄罗斯天然气工业石油公司）黑客马拉松提供的数据，该数据集包含大量焊接接头的 X 射线检测图像，用于解决焊接缺陷检测与分类任务。
 类别名称：
 
@@ -58,7 +60,7 @@ https://pan.baidu.com/s/1mf3gkusHvUvokVvlW_tKuA?pwd=2dut
 ## 焊缝 X 射线图像数据集
 https://zenodo.org/records/10618962
 # 期望
-目标是低耦合的代码设计+oop的思想组织项目
+目标是低耦合的代码设计，+oop的思想组织项目，训练模型
 # 结果
 ## 针对PCE两个数据集厚度预测 EPOCH=40
 
@@ -80,13 +82,21 @@ Precision 93.54% 查全率Recall 92.33%  MSE 0.0801
 查全率| 0.9880| 0.9356
 F1-Score|  0.9935| 0.9405
 mAP50|    0.9947| 0.9542
-### 使用DeepLabV3，epoch=5，训练集200张
-像素查准率 (Precision): 0.6651
-像素查全率 (Recall):    0.1075
-F1-Score:              0.1851
-缺陷交并比 (IoU / mAP): 0.1020
-### 使用FCN算法，epoch=5，训练集200张
-像素查准率 (Precision): 0.7159
-像素查全率 (Recall):    0.0460
-F1-Score:              0.0864
-缺陷交并比 (IoU / mAP): 0.0452
+### 使用DeepLabV3和使用FCN算法，epoch=5，训练集200张
+指标\算法 | DeepLabV3 | FCN
+---- | ---- | ----
+像素查准率 |0.6651| 0.7159
+像素查全率 |  0.1075|0.0460
+F1-Score | 0.1851| 0.0864
+缺陷交并比 (IoU / mAP):| 0.1020| 0.0452
+
+
+## 针对RWDD焊缝X射线照片中的缺陷检测——焊接缺陷检测数据集
+yolov11n-seg，EPOCH=20，1000张数据集，batchsize=16 
+
+指标 | 值
+ ---|---
+查准| 0.544  
+查全 |0.415  
+f1 |0.4712
+mAP50|  0.355 

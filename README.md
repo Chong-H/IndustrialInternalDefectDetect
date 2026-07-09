@@ -92,7 +92,7 @@ F1-Score | 0.1851| 0.0864
 
 
 ## 针对RWDD焊缝X射线照片中的缺陷检测——焊接缺陷检测数据集
-yolov11n-seg，EPOCH=20，1000张数据集，batchsize=16 
+### yolov11n-seg，EPOCH=20，1000张数据集，batchsize=16 
 
 指标 | 值
  ---|---
@@ -100,6 +100,24 @@ yolov11n-seg，EPOCH=20，1000张数据集，batchsize=16
 查全 |0.415  
 f1 |0.4712
 mAP50|  0.355 
+
+### 使用RD-DETR ，8epochs，800训练集，200张验证集合，验证机取出50张图片评估模型能力
+
+类别	|实例数	|P 精确率|	R 召回率|	F1	
+|---|---|---|---|---
+Porosity 气孔|	24	|1.0|	0|	0	
+Inclusion 夹渣|	7	|1.0|	0	|0	
+Reference1 参考件|	6	|0.295|	1|	0.456
+Reference2 参考件|	2	|0.141|	1|	0.247
+
+### 使用Faster R-CNN
+
+缺陷英文名称    |                  查准率(P)  |    查全率(R)  |    F1-Score
+----------|---------------|---------------|--------------------
+Porosity      |              0.2137  |    0.3041   |   0.2510  
+Reference 1       |          0.6721   |   1.0000  |    0.8039      
+Reference 2        |         0.6364  |    0.9655    |  0.7671
+全类别平均(Macro Average)  |      0.1171   |   0.1746   |   0.1402     
 
 ## USM采集超声波流量计 采集Ultrasonic Flowmeter Diagnostics Data Set（超声波流量计诊断数据集）
 细分为四个数据集 分别是Meter A, B, C, D

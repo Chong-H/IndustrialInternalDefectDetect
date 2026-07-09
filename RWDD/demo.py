@@ -9,6 +9,7 @@ def predict_with_fixed_labels():
     model_path = Path(r"D:\DataSets\InsideMachine\Radiographsweldingdefectdetection\m60.pt")
     image_dir = Path(r"D:\DataSets\InsideMachine\Radiographsweldingdefectdetection\train\images")
 
+
     if not model_path.exists() or not image_dir.exists():
         print("❌ 错误：请检查模型或图片路径是否正确！")
         return

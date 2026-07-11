@@ -75,7 +75,9 @@ class UniversalMLP(nn.Module):
         # 针对小样本高维表格数据的经典对称瓶颈拓扑结构
         self.network = nn.Sequential(
             nn.Linear(input_dim, 64),
+            #将64列特征各自归一化为μ=0,σ=1的分布，提升训练稳定性
             nn.BatchNorm1d(64),
+            #与Relu类似，但在负数区间不再变为0，而是变为原数据的0.1倍，避免神经元死亡
             nn.LeakyReLU(0.1),
             nn.Dropout(dropout_rate),
 

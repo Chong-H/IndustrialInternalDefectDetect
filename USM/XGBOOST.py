@@ -93,6 +93,7 @@ class MLUSMPipeline:
             # XGBoost 多分类需要特别指定 eval_metric
             model = XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.1,
                                   eval_metric='mlogloss', random_state=42, n_jobs=-1)
+            # 100 tree depth=3, learning_rate=0.1, eval_metric='mlogloss'
             print(f"\n================ 启动自适应 [XGBoost] 训练 ================")
 
         print(f"数据指纹 -> 特征列数: {num_features} | 故障类别数: {num_classes}")
